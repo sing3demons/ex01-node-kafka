@@ -1,0 +1,21 @@
+{
+  "name": "ex01-node-kafka",
+  "version": "1.0.0",
+  "private": true,
+  "description": "สอน Kafka ด้วย TypeScript: admin, producer, consumer, consumer group",
+  "type": "module",
+  "scripts": {
+    "admin": "tsx --env-file=.env src/01-admin.ts",
+    "producer": "tsx --env-file=.env src/02-producer.ts",
+    "consumer": "tsx --env-file=.env src/03-consumer.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.11.0"
+  }
+}
