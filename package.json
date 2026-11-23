@@ -5,9 +5,7 @@
   "description": "สอน Kafka ด้วย TypeScript: admin, producer, consumer, consumer group",
   "type": "module",
   "scripts": {
-    "admin": "tsx --env-file=.env src/01-admin.ts",
-    "producer": "tsx --env-file=.env src/02-producer.ts",
-    "consumer": "tsx --env-file=.env src/03-consumer.ts",
+    "start:dev": "tsx --env-file=.env src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -16,6 +14,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@confluentinc/kafka-javascript": "^1.11.0"
+    "@confluentinc/kafka-javascript": "^1.11.0",
+    "zod": "^4.6.7"
   }
 }

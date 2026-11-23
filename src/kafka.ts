@@ -19,6 +19,7 @@ export const { Kafka, CompressionTypes, ErrorCodes, logLevel } = Confluent.Kafka
 
 export const TOPIC = "orders";
 
+
 export const kafka = new Kafka({
   kafkaJS: {
     clientId: "kafka-tutorial",

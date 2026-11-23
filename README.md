@@ -21,6 +21,7 @@ Branch นี้ใช้ [`@confluentinc/kafka-javascript`](https://github.com/
 | 1 | [src/01-admin.ts](src/01-admin.ts) | topic, partition, offset |
 | 2 | [src/02-producer.ts](src/02-producer.ts) | การส่ง message, key → partition, headers, acks, batch |
 | 3 | [src/03-consumer.ts](src/03-consumer.ts) | consumer group, offset commit, rebalance |
+| 4 | [src/04-controller.ts](src/04-controller.ts) | เขียน consumer แบบ `@Controller` / `@Consumer` ด้วย lib KP ([src/kp](src/kp)) |
 
 ## ภาพรวม
 
@@ -79,6 +80,13 @@ group ใหม่จะอ่านตั้งแต่ต้น (`fromBeginni
 **6. มากกว่า partition** — เปิด consumer group เดียวกัน 4 ตัว (topic มี 3 partition)
 → ตัวที่ 4 ได้ `partition []` คือว่าง ไม่ได้อ่านอะไร
 
+**7. Controller แบบ decorator (lib KP)**
+```bash
+npm run controller        # terminal 1
+npm run producer          # terminal 2
+```
+message `OrderCreated` ผ่าน schema ✓ ส่วน `BatchDemo` validate ไม่ผ่าน → handler throw → log แล้วข้าม
+
 ดู topic, message และ consumer group ได้ที่ Kafka UI: http://localhost:8081
 
 ## หมายเหตุ
@@ -86,3 +94,52 @@ group ใหม่จะอ่านตั้งแต่ต้น (`fromBeginni
 - lib นี้เป็น native module (C++) — `npm install` จะโหลด binary ที่ build ไว้แล้วสำหรับ OS/Node ของเรา
 - ข้อความ `รอ message อยู่...` ขึ้นก่อน `rebalance → ได้ partition` เป็นเรื่องปกติ เพราะ `run()` คืนค่าทันที แล้วค่อยเข้ากลุ่มเบื้องหลัง
 - ตอนกด Ctrl+C consumer อาจใช้เวลา 2-3 วินาที เพราะต้องแจ้งออกจาก group ก่อน
+
+## lib KP (src/kp)
+
+ครอบ consumer ของ `@confluentinc/kafka-javascript` ให้เขียนเป็น controller:
+
+```ts
+import { z } from "zod";
+import { Consumer, Controller, Ctx, KafkaApp } from "./kp/index.js";
+
+const OrderSchema = z.object({ orderId: z.string(), amount: z.number() });
+
+@Controller()
+export class EventConsumerController {
+  @Consumer("orders")
+  async handleEvents(c: Ctx) {
+    c.headers<{ "event-type"?: string }>(); // headers เป็น string
+    c.payload<{ orderId: string }>();       // JSON.parse แล้ว (แค่ type hint)
+
+    const result = c.validate(OrderSchema, c.payload()); // ไม่ส่งตัวที่ 2 = ตรวจ payload
+    if (!result.ok) {
+      throw new Error("Invalid request");   // result.issues = รายการที่ผิด
+    }
+    result.value;                            // type มาจาก schema
+  }
+}
+
+const app = new KafkaApp({ kafka, groupId: "billing", controllers: [EventConsumerController] });
+await app.start();
+```
+
+| API | หน้าที่ |
+|---|---|
+| `@Controller()` | ทำเครื่องหมาย class เป็นกลุ่ม handler |
+| `@Consumer("topic")` | ผูก method กับ topic (ใส่ซ้อนกันได้ = ฟังหลาย topic, หลาย handler ฟัง topic เดียวกันได้) |
+| `c.topic` `c.partition` `c.offset` `c.key` `c.timestamp` | ตำแหน่งของ message |
+| `c.headers<T>()` / `c.header(name)` | headers แปลงเป็น string แล้ว |
+| `c.payload<T>()` | value ที่ parse JSON แล้ว (parse ครั้งเดียว, ไม่ใช่ JSON ได้ string) |
+| `c.validate(Schema, data?)` | ตรวจด้วย [Standard Schema](https://standardschema.dev) — zod, valibot, arktype ใช้ได้หมด → `{ ok: true, value }` หรือ `{ ok: false, issues }` |
+| `c.validateAsync(...)` | สำหรับ schema ที่มี async refine |
+| `formatIssues(issues)` | แปลง issues เป็นข้อความ |
+
+**KafkaApp options:** `kafka`, `groupId`, `controllers` (class หรือ instance ที่ inject dependency แล้ว),
+`fromBeginning`, `concurrency` (จำนวน partition ที่ทำพร้อมกัน), `onError`, `consumerConfig`
+
+**เมื่อ handler throw:** เรียก `onError(err, c)`
+- default: log แล้วข้าม (commit offset ไปต่อ)
+- ถ้า `onError` throw ต่อ → ไม่ commit → message ถูกส่งมาใหม่ (retry แบบ at-least-once — ระวัง message ที่ผิดถาวรจะวนไม่จบ)
+
+decorator ใช้ได้ทั้ง TC39 decorators (default ของ TypeScript) และ `experimentalDecorators: true` แบบ NestJS
