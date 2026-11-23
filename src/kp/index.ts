@@ -11,7 +11,21 @@
  *     }
  *   }
  */
-export { KafkaApp, type KafkaAppOptions } from "./app.js";
+export {
+  KafkaApp,
+  type ConsumerOptions,
+  type KafkaAppOptions,
+  type KafkaConnection,
+  type ProducerAppOptions,
+} from "./app.js";
 export { Ctx, formatIssues, type RawMessage, type ValidateResult } from "./context.js";
 export { Consumer, Controller } from "./decorators.js";
+export type {
+  KpProducer,
+  ProduceMessage,
+  ProduceRecord,
+  ProducerConfig,
+  ProducerOptions,
+  RecordMetadata,
+} from "./producer.js";
 export type { StandardSchemaV1 } from "./standard-schema.js";

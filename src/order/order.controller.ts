@@ -12,6 +12,9 @@ import { OrderCreatedSchema } from "./order.schema.js";
 
 type EventHeaders = { "event-type"?: string };
 
+export const ORDER_EVENTS_TOPIC = "order-events";
+export const ORDER_AUDIT_TOPIC = "order-audit";
+
 @Controller()
 export class EventConsumerController {
   // รับ service ผ่าน constructor (dependency injection) — server.ts เป็นคนสร้างแล้วส่งเข้ามา
@@ -38,10 +41,31 @@ export class EventConsumerController {
     const where = `${c.topic}[${c.partition}]@${c.offset}`;
     if (out.status === "duplicate") {
       console.log(`${where} ↺ order ${out.orderId} ซ้ำ — ข้าม`);
-    } else {
-      console.log(
-        `${where} ✓ order ${out.order.id} ของ ${out.order.customerId} ${out.order.amount} บาท (ยอดรวม ${out.customerTotal} บาท)`,
-      );
+      return;
     }
+    console.log(
+      `${where} ✓ order ${out.order.id} ของ ${out.order.customerId} ${out.order.amount} บาท (ยอดรวม ${out.customerTotal} บาท)`,
+    );
+
+    // แบบที่ 1: producer default (ตั้ง config ไว้ใน server.ts, connect ตั้งแต่ start)
+    // ส่ง event ต่อให้ service อื่น — key เดิม → ลำดับของลูกค้าคนเดียวกันยังเรียงถูก
+    const [sent] = await c.getProducer().send({
+      topic: ORDER_EVENTS_TOPIC,
+      messages: [
+        {
+          key: out.order.customerId,
+          value: { orderId: out.order.id, customerId: out.order.customerId, customerTotal: out.customerTotal },
+          headers: { "event-type": "OrderAccepted", "caused-by": where },
+        },
+      ],
+    });
+    console.log(`  → ${ORDER_EVENTS_TOPIC}[${sent.partition}]@${sent.baseOffset ?? sent.offset} OrderAccepted`);
+
+    // แบบที่ 2: producer ตาม config (connect ตอนใช้ครั้งแรก แล้ว cache ไว้ใช้ต่อ)
+    // audit log ไม่ซีเรียสมาก → acks: 1 (รอแค่ leader) เร็วกว่า
+    await c.setProducer({ producer: { kafkaJS: { acks: 1 } } }).send({
+      topic: ORDER_AUDIT_TOPIC,
+      messages: [{ value: { action: "order.created", orderId: out.order.id, at: new Date().toISOString() } }],
+    });
   }
 }

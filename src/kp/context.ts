@@ -5,7 +5,10 @@
  *   c.headers<T>()                             headers เป็น string แล้ว
  *   c.payload<T>()                             value ที่ JSON.parse แล้ว (parse ครั้งเดียว)
  *   c.validate(Schema, data?)                  ตรวจด้วย schema → { ok, value } | { ok: false, issues }
+ *   c.getProducer().send(...)                  producer ที่ตั้งไว้ตอนสร้าง app
+ *   c.setProducer({...}).send(...)             producer ตาม config ที่ส่งเข้าไป (connect ตอนใช้ครั้งแรก)
  */
+import type { KpProducer, ProducerManager, ProducerOptions } from "./producer.js";
 import type { StandardSchemaV1 } from "./standard-schema.js";
 
 export type ValidateResult<T> =
@@ -33,8 +36,11 @@ export class Ctx {
 
   #payload: unknown = UNPARSED;
   #headers?: Record<string, string>;
+  readonly #producers?: ProducerManager;
+  #producer?: KpProducer;
 
-  constructor(topic: string, partition: number, message: RawMessage) {
+  constructor(topic: string, partition: number, message: RawMessage, producers?: ProducerManager) {
+    this.#producers = producers;
     this.topic = topic;
     this.partition = partition;
     this.offset = message.offset;
@@ -53,6 +59,31 @@ export class Ctx {
       }
     }
     return this.#headers as T;
+  }
+
+  /**
+   * producer ของ message นี้:
+   *   - ถ้าเคยเรียก c.setProducer() → ตัวนั้น
+   *   - ไม่งั้น → producer default ที่ตั้งไว้ใน new KafkaApp({ producer })
+   */
+  getProducer(): KpProducer {
+    return (this.#producer ??= this.#manager().default());
+  }
+
+  /**
+   * ใช้ producer ตาม config นี้ (และให้ c.getProducer() คืนตัวนี้ต่อจากนี้ใน message เดียวกัน)
+   * connect ตอน send ครั้งแรก แล้ว cache ไว้ใน app — config เดียวกันจะได้ producer ตัวเดิม
+   *
+   *   c.setProducer({ producer: { kafkaJS: { acks: 1 } } }).send(...)
+   *   c.setProducer({ kafka: { kafkaJS: { brokers: ["other:9092"] } } }).send(...)   // cluster อื่น
+   */
+  setProducer(options: ProducerOptions = {}): KpProducer {
+    return (this.#producer = this.#manager().get(options));
+  }
+
+  #manager(): ProducerManager {
+    if (!this.#producers) throw new Error("Ctx นี้ไม่ได้สร้างจาก KafkaApp จึงไม่มี producer");
+    return this.#producers;
   }
 
   /** header ตัวเดียว */
